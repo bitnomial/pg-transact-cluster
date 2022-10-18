@@ -1,0 +1,27 @@
+---
+
+version: 1.0.0.0
+name: pg-transact-cluster
+synopsis: An abstraction for running database queries against a cluster with read and write replicas
+
+license: BSD-3-Clause
+copyright: 2022 Bitnomial, Inc.
+
+ghc-options: -Wall
+
+library:
+  source-dirs: src
+  when:
+    - condition: false
+      other-modules: Paths_pg_transact_cluster
+  other-modules:
+    - Database.PostgreSQL.Transact.Cluster.Connection
+
+dependencies:
+  - base >=4.15 && <4.20
+  - bytestring >=0.10 && <0.12
+  - monad-control ^>=1.0
+  - pg-transact ^>=0.3
+  - postgresql-simple ^>=0.6
+  - resource-pool >=0.2 && <0.4
+  - transformers >=0.5 && <0.7
