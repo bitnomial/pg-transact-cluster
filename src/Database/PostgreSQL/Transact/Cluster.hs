@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 
 -- |
 -- Module: Database.PostgreSQL.Transact.Cluster
@@ -25,9 +26,6 @@ module Database.PostgreSQL.Transact.Cluster (
     readonly,
     toReadWrite,
     liftQuery,
-
-    -- * Exceptions
-    ClusterConnPoolException (..),
 ) where
 
 import Control.Monad.Trans.Class (MonadTrans, lift)
@@ -36,10 +34,10 @@ import Data.Pool (withResource)
 import Database.PostgreSQL.Transact (DBT, runDBTNoTransaction, runDBTSerializable)
 import Database.PostgreSQL.Transact.Cluster.Connection (
     ClusterConnPool (..),
-    ClusterConnPoolException (..),
     newClusterConnPool,
     newReadOnlyClusterConnPool,
  )
+import Data.Kind (Constraint)
 
 
 data QueryMode = ReadOnly | ReadWrite
@@ -62,6 +60,7 @@ instance MonadTrans (CDBT mode) where
 
 
 -- | This typeclass allows programmers to write 'QueryMode' agnostic query execution code
+type ExecutionMode :: QueryMode -> Constraint
 class ExecutionMode mode where
     runSerializable ::
         MonadBaseControl IO m =>
@@ -95,6 +94,10 @@ instance ExecutionMode 'ReadWrite where
 
 -- | Mark a query as readonly
 readonly :: DBT m a -> CDBT 'ReadOnly m a
+-- It almost feels like this should be called 'unsafeReadOnly' (unless we also
+-- want to provide a wrapper around DBT that only allows the 'query' function
+-- to be used (not 'execute')). The scope of pg-transact is pretty small, so
+-- this might not be a crazy idea.
 readonly = CDBT
 
 
