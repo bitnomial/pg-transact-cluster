@@ -17,22 +17,22 @@ readTask :: CDB 'ReadOnly [Text]
 readTask = getItems >>= followUpR
 
 writeTask :: CDB 'ReadWrite ()
-writeTask = toReadWrite getItems >>= followUpRW
+writeTask = asReadWrite getItems >>= followUpRW
 
-getItems :: CDB 'ReadOnly [Int]
+getItems :: CDB anyMode [Int]
 getItems = readonly q
   where
   q :: DB [Int]
   q = _impl
 
-followUpR :: [Int] -> CDB 'ReadOnly [Text]
+followUpR :: [Int] -> CDB anyMode [Text]
 followUpR = readonly . q
   where
   q :: [Int] -> DB [Text]
   q = _impl
 
 followUpW :: [Int] -> CDB 'ReadWrite ()
-followUpW = liftQuery . q
+followUpW = readWrite . q
   where
     q :: [Int] -> DB ()
     q = _impl
