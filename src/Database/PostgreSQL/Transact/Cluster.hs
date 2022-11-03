@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -15,12 +16,16 @@
 module Database.PostgreSQL.Transact.Cluster (
     -- * Connection
     ClusterConnPool,
+    readPool,
+    writePool,
     newClusterConnPool,
     newReadOnlyClusterConnPool,
+    asReadOnlyPool,
 
     -- * Queries
     QueryMode (..),
     CDBT,
+    getDBT,
     CDB,
     ExecutionMode (..),
     readonly,
@@ -40,8 +45,11 @@ import Database.PostgreSQL.Transact.Cluster.Connection (
     ClusterConnPool (..),
     ClusterConnPoolException (..),
     QueryMode (..),
+    asReadOnlyPool,
     newClusterConnPool,
     newReadOnlyClusterConnPool,
+    readPool,
+    writePool,
  )
 
 
@@ -52,7 +60,13 @@ newtype CDBT (mode :: QueryMode) m a = CDBT {unCDBT :: DBT m a}
         , Applicative
         , Monad
         , MonadIO
+        , Semigroup
+        , Monoid
         )
+
+
+getDBT :: CDBT mode m a -> DBT m a
+getDBT = unCDBT
 
 
 type CDB mode = CDBT mode IO
@@ -63,20 +77,20 @@ instance MonadTrans (CDBT mode) where
 
 
 -- | This typeclass allows programmers to write 'QueryMode' agnostic query execution code
-class ExecutionMode mode where
+class ExecutionMode modeConn modeQuery where
     runSerializable ::
         MonadBaseControl IO m =>
-        ClusterConnPool mode ->
-        CDBT mode m a ->
+        ClusterConnPool modeConn ->
+        CDBT modeQuery m a ->
         m a
     runNoTransaction ::
         MonadBaseControl IO m =>
-        ClusterConnPool mode ->
-        CDBT mode m a ->
+        ClusterConnPool modeConn ->
+        CDBT modeQuery m a ->
         m a
 
 
-instance ExecutionMode 'ReadOnly where
+instance ExecutionMode 'ReadOnly 'ReadOnly where
     runSerializable ClusterConnPool{readReplicaConns} (CDBT task) =
         control $ \run ->
             withResource readReplicaConns (run . runDBTSerializable task)
@@ -85,7 +99,16 @@ instance ExecutionMode 'ReadOnly where
             withResource readReplicaConns (run . runDBTNoTransaction task)
 
 
-instance ExecutionMode 'ReadWrite where
+instance ExecutionMode 'ReadWrite 'ReadOnly where
+    runSerializable ClusterConnPool{readReplicaConns} (CDBT task) =
+        control $ \run ->
+            withResource readReplicaConns (run . runDBTSerializable task)
+    runNoTransaction ClusterConnPool{readReplicaConns} (CDBT task) =
+        control $ \run ->
+            withResource readReplicaConns (run . runDBTNoTransaction task)
+
+
+instance ExecutionMode 'ReadWrite 'ReadWrite where
     runSerializable ClusterConnPool{writeReplicaConns} (CDBT task) =
         control $ \run ->
             withResource writeReplicaConns (run . runDBTSerializable task)

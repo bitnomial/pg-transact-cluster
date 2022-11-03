@@ -13,14 +13,18 @@
 module Database.PostgreSQL.Transact.Cluster.Connection (
     QueryMode (..),
     ClusterConnPool (..),
+    readPool,
+    writePool,
     newClusterConnPool,
     newReadOnlyClusterConnPool,
+    asReadOnlyPool,
     ClusterConnPoolException (..),
 ) where
 
 import Control.Concurrent (getNumCapabilities)
 import Control.Exception (Exception, throwIO)
 import Control.Monad (join)
+import Data.Coerce (coerce)
 import Data.IORef (atomicModifyIORef', newIORef)
 import Data.Pool (Pool, createPool)
 import Database.PostgreSQL.Simple (Connection, close)
@@ -33,6 +37,14 @@ data ClusterConnPool (mode :: QueryMode) = ClusterConnPool
     { readReplicaConns :: Pool Connection
     , writeReplicaConns :: Pool Connection
     }
+
+
+readPool :: ClusterConnPool mode -> Pool Connection
+readPool = readReplicaConns
+
+
+writePool :: ClusterConnPool 'ReadWrite -> Pool Connection
+writePool = writeReplicaConns
 
 
 -- | If either list of connectors is empty, then an attempt to run a query
@@ -55,6 +67,11 @@ newClusterConnPool readConnectors writeConnectors =
 newReadOnlyClusterConnPool :: [IO Connection] -> IO (ClusterConnPool 'ReadOnly)
 newReadOnlyClusterConnPool readConnectors =
     newClusterConnPool readConnectors mempty
+
+
+-- | Drop the type-level write capability on a pool
+asReadOnlyPool :: ClusterConnPool 'ReadWrite -> ClusterConnPool 'ReadOnly
+asReadOnlyPool = coerce
 
 
 connPool :: [IO Connection] -> IO (Pool Connection)
