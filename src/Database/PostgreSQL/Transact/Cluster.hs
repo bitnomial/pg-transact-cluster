@@ -40,7 +40,8 @@ import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans, lift)
 import Control.Monad.Trans.Control (MonadBaseControl, control)
 import Data.Pool (withResource)
-import Database.PostgreSQL.Transact (DBT, runDBTNoTransaction, runDBTSerializable)
+import Database.PostgreSQL.Simple.Transaction (IsolationLevel (RepeatableRead))
+import Database.PostgreSQL.Transact (DBT, runDBT, runDBTNoTransaction, runDBTSerializable)
 import Database.PostgreSQL.Transact.Cluster.Connection (
     ClusterConnPool (..),
     ClusterConnPoolException (..),
@@ -93,7 +94,7 @@ class ExecutionMode modeConn modeQuery where
 instance ExecutionMode 'ReadOnly 'ReadOnly where
     runSerializable ClusterConnPool{readReplicaConns} (CDBT task) =
         control $ \run ->
-            withResource readReplicaConns (run . runDBTSerializable task)
+            withResource readReplicaConns (run . runDBT task RepeatableRead)
     runNoTransaction ClusterConnPool{readReplicaConns} (CDBT task) =
         control $ \run ->
             withResource readReplicaConns (run . runDBTNoTransaction task)
@@ -102,7 +103,7 @@ instance ExecutionMode 'ReadOnly 'ReadOnly where
 instance ExecutionMode 'ReadWrite 'ReadOnly where
     runSerializable ClusterConnPool{readReplicaConns} (CDBT task) =
         control $ \run ->
-            withResource readReplicaConns (run . runDBTSerializable task)
+            withResource readReplicaConns (run . runDBT task RepeatableRead)
     runNoTransaction ClusterConnPool{readReplicaConns} (CDBT task) =
         control $ \run ->
             withResource readReplicaConns (run . runDBTNoTransaction task)
