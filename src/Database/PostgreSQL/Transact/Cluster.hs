@@ -5,6 +5,8 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -38,10 +40,17 @@ module Database.PostgreSQL.Transact.Cluster (
 
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans, lift)
-import Control.Monad.Trans.Control (MonadBaseControl, control)
+import Control.Monad.Trans.Control (MonadBaseControl, RunInBase, StM, control)
+import Control.Monad.Trans.Reader (runReaderT)
+import qualified Data.ByteString as BS
 import Data.Pool (withResource)
-import Database.PostgreSQL.Simple.Transaction (IsolationLevel (RepeatableRead))
-import Database.PostgreSQL.Transact (DBT, runDBT, runDBTNoTransaction, runDBTSerializable)
+import Database.PostgreSQL.Simple (Connection, SqlError (SqlError, sqlErrorMsg))
+import Database.PostgreSQL.Simple.Transaction (
+    IsolationLevel (RepeatableRead),
+    TransactionMode (TransactionMode),
+ )
+import qualified Database.PostgreSQL.Simple.Transaction as PSQL
+import Database.PostgreSQL.Transact (DBT, runDBTNoTransaction, runDBTSerializable, unDBT)
 import Database.PostgreSQL.Transact.Cluster.Connection (
     ClusterConnPool (..),
     ClusterConnPoolException (..),
@@ -91,19 +100,34 @@ class ExecutionMode modeConn modeQuery where
         m a
 
 
+runReadOnly ::
+    MonadBaseControl IO m =>
+    RunInBase m IO ->
+    CDBT 'ReadOnly m r ->
+    Connection ->
+    IO (StM m r)
+runReadOnly run (CDBT task) conn =
+    PSQL.withTransactionModeRetry txMode isSerializationAnomaly conn q
+  where
+    txMode = TransactionMode RepeatableRead PSQL.ReadOnly
+    isSerializationAnomaly SqlError{sqlErrorMsg} =
+        "concurrent update" `BS.isInfixOf` sqlErrorMsg
+    q = run $ runReaderT (unDBT task) conn
+
+
 instance ExecutionMode 'ReadOnly 'ReadOnly where
-    runSerializable ClusterConnPool{readReplicaConns} (CDBT task) =
+    runSerializable ClusterConnPool{readReplicaConns} task =
         control $ \run ->
-            withResource readReplicaConns (run . runDBT task RepeatableRead)
+            withResource readReplicaConns (runReadOnly run task)
     runNoTransaction ClusterConnPool{readReplicaConns} (CDBT task) =
         control $ \run ->
             withResource readReplicaConns (run . runDBTNoTransaction task)
 
 
 instance ExecutionMode 'ReadWrite 'ReadOnly where
-    runSerializable ClusterConnPool{readReplicaConns} (CDBT task) =
+    runSerializable ClusterConnPool{readReplicaConns} task =
         control $ \run ->
-            withResource readReplicaConns (run . runDBT task RepeatableRead)
+            withResource readReplicaConns (runReadOnly run task)
     runNoTransaction ClusterConnPool{readReplicaConns} (CDBT task) =
         control $ \run ->
             withResource readReplicaConns (run . runDBTNoTransaction task)
