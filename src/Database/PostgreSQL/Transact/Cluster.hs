@@ -70,6 +70,7 @@ newtype CDBT (mode :: QueryMode) m a = CDBT {unCDBT :: DBT m a}
         , Applicative
         , Monad
         , MonadIO
+        , MonadFail
         , Semigroup
         , Monoid
         )
