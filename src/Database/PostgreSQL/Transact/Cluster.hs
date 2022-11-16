@@ -27,8 +27,9 @@ module Database.PostgreSQL.Transact.Cluster (
     -- * Queries
     QueryMode (..),
     CDBT,
-    getDBT,
     CDB,
+    hoistCDBT,
+    getDBT,
     ExecutionMode (..),
     readonly,
     asReadWrite,
@@ -41,7 +42,7 @@ module Database.PostgreSQL.Transact.Cluster (
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (MonadTrans, lift)
 import Control.Monad.Trans.Control (MonadBaseControl, RunInBase, StM, control)
-import Control.Monad.Trans.Reader (runReaderT)
+import Control.Monad.Trans.Reader (ReaderT (ReaderT), runReaderT)
 import qualified Data.ByteString as BS
 import Data.Pool (withResource)
 import Database.PostgreSQL.Simple (Connection, SqlError (SqlError, sqlErrorMsg))
@@ -50,7 +51,7 @@ import Database.PostgreSQL.Simple.Transaction (
     TransactionMode (TransactionMode),
  )
 import qualified Database.PostgreSQL.Simple.Transaction as PSQL
-import Database.PostgreSQL.Transact (DBT, runDBTNoTransaction, runDBTSerializable, unDBT)
+import Database.PostgreSQL.Transact (DBT (DBT), runDBTNoTransaction, runDBTSerializable, unDBT)
 import Database.PostgreSQL.Transact.Cluster.Connection (
     ClusterConnPool (..),
     ClusterConnPoolException (..),
@@ -78,6 +79,10 @@ newtype CDBT (mode :: QueryMode) m a = CDBT {unCDBT :: DBT m a}
 
 getDBT :: CDBT mode m a -> DBT m a
 getDBT = unCDBT
+
+
+hoistCDBT :: (forall x. m x -> n x) -> CDBT mode m a -> CDBT mode n a
+hoistCDBT nt (CDBT (DBT (ReaderT f))) = CDBT . DBT . ReaderT $ nt . f
 
 
 type CDB mode = CDBT mode IO
