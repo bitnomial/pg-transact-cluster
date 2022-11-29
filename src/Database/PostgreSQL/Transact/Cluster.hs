@@ -26,10 +26,9 @@ module Database.PostgreSQL.Transact.Cluster (
 
     -- * Queries
     QueryMode (..),
-    CDBT,
+    CDBT (..),
     CDB,
     hoistCDBT,
-    getDBT,
     ExecutionMode (..),
     readonly,
     asReadWrite,
@@ -65,7 +64,7 @@ import Database.PostgreSQL.Transact.Cluster.Connection (
 
 
 -- | This abstraction gives developers a way to mark 'DBT' code as read only.
-newtype CDBT (mode :: QueryMode) m a = CDBT {unCDBT :: DBT m a}
+newtype CDBT (mode :: QueryMode) m a = CDBT {getDBT :: DBT m a}
     deriving
         ( Functor
         , Applicative
@@ -75,10 +74,6 @@ newtype CDBT (mode :: QueryMode) m a = CDBT {unCDBT :: DBT m a}
         , Semigroup
         , Monoid
         )
-
-
-getDBT :: CDBT mode m a -> DBT m a
-getDBT = unCDBT
 
 
 hoistCDBT :: (forall x. m x -> n x) -> CDBT mode m a -> CDBT mode n a
@@ -157,7 +152,7 @@ readonly = CDBT
 -- | Mark any query as a 'ReadWrite'.  This is useful for including 'ReadOnly'
 -- code in a 'ReadWrite' value
 asReadWrite :: CDBT mode m a -> CDBT 'ReadWrite m a
-asReadWrite = CDBT . unCDBT
+asReadWrite = CDBT . getDBT
 
 
 -- | Lift an arbitrary query
