@@ -26,7 +26,7 @@ import Control.Exception (Exception, throwIO)
 import Control.Monad (join)
 import Data.Coerce (coerce)
 import Data.IORef (atomicModifyIORef', newIORef)
-import Data.Pool (Pool, createPool)
+import Data.Pool (Pool, defaultPoolConfig, newPool)
 import Database.PostgreSQL.Simple (Connection, close)
 
 
@@ -77,13 +77,10 @@ asReadOnlyPool = coerce
 connPool :: [IO Connection] -> IO (Pool Connection)
 connPool connectors = do
     getConnector <- setup connectors
-    createPool
-        (join getConnector)
-        close
-        5
-        10
-        =<< getNumCapabilities
+    maxResources <- (* 2) <$> getNumCapabilities
+    newPool $ defaultPoolConfig (join getConnector) close idleTime maxResources
   where
+    idleTime = 10
     setup = \case
         c : cs -> do
             refConnectors <- newIORef connectors
