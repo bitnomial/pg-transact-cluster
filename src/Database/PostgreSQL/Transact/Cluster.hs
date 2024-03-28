@@ -7,6 +7,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -75,6 +76,10 @@ newtype CDBT (mode :: QueryMode) m a = CDBT {getDBT :: DBT m a}
         , Semigroup
         , Monoid
         )
+
+
+-- The first argument of CDBT is nominal, because we don't want to allow coercions from CDBT ReadWrite to CDBT ReadOnly.
+type role CDBT nominal representational nominal
 
 
 hoistCDBT :: (forall x. m x -> n x) -> CDBT mode m a -> CDBT mode n a
