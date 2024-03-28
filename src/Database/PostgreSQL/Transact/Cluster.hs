@@ -43,6 +43,7 @@ import Control.Monad.Trans.Class (MonadTrans, lift)
 import Control.Monad.Trans.Control (MonadBaseControl, RunInBase, StM, control)
 import Control.Monad.Trans.Reader (ReaderT (ReaderT), runReaderT)
 import qualified Data.ByteString as BS
+import Data.Coerce (coerce)
 import Data.Pool (withResource)
 import Database.PostgreSQL.Simple (Connection, SqlError (SqlError, sqlErrorMsg))
 import Database.PostgreSQL.Simple.Transaction (
@@ -143,7 +144,7 @@ readonly = CDBT
 -- | Mark any query as a 'ReadWrite'.  This is useful for including 'ReadOnly'
 -- code in a 'ReadWrite' value
 asReadWrite :: CDBT mode m a -> CDBT 'ReadWrite m a
-asReadWrite = CDBT . getDBT
+asReadWrite = coerce
 
 
 -- | Lift an arbitrary query
