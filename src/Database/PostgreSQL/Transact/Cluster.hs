@@ -116,16 +116,7 @@ runReadOnly run (CDBT task) conn =
     q = run $ runReaderT (unDBT task) conn
 
 
-instance ExecutionMode 'ReadOnly 'ReadOnly where
-    runSerializable ClusterConnPool{readReplicaConns} task =
-        control $ \run ->
-            withResource readReplicaConns (runReadOnly run task)
-    runNoTransaction ClusterConnPool{readReplicaConns} (CDBT task) =
-        control $ \run ->
-            withResource readReplicaConns (run . runDBTNoTransaction task)
-
-
-instance ExecutionMode 'ReadWrite 'ReadOnly where
+instance ExecutionMode modeConn 'ReadOnly where
     runSerializable ClusterConnPool{readReplicaConns} task =
         control $ \run ->
             withResource readReplicaConns (runReadOnly run task)
