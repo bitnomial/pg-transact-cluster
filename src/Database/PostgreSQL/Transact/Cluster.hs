@@ -7,6 +7,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RoleAnnotations #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
@@ -43,6 +44,7 @@ import Control.Monad.Trans.Class (MonadTrans, lift)
 import Control.Monad.Trans.Control (MonadBaseControl, RunInBase, StM, control)
 import Control.Monad.Trans.Reader (ReaderT (ReaderT), runReaderT)
 import qualified Data.ByteString as BS
+import Data.Coerce (coerce)
 import Data.Pool (withResource)
 import Database.PostgreSQL.Simple (Connection, SqlError (SqlError, sqlErrorMsg))
 import Database.PostgreSQL.Simple.Transaction (
@@ -74,6 +76,10 @@ newtype CDBT (mode :: QueryMode) m a = CDBT {getDBT :: DBT m a}
         , Semigroup
         , Monoid
         )
+
+
+-- The first argument of CDBT is nominal, because we don't want to allow coercions from CDBT ReadWrite to CDBT ReadOnly.
+type role CDBT nominal representational nominal
 
 
 hoistCDBT :: (forall x. m x -> n x) -> CDBT mode m a -> CDBT mode n a
@@ -116,16 +122,7 @@ runReadOnly run (CDBT task) conn =
     q = run $ runReaderT (unDBT task) conn
 
 
-instance ExecutionMode 'ReadOnly 'ReadOnly where
-    runSerializable ClusterConnPool{readReplicaConns} task =
-        control $ \run ->
-            withResource readReplicaConns (runReadOnly run task)
-    runNoTransaction ClusterConnPool{readReplicaConns} (CDBT task) =
-        control $ \run ->
-            withResource readReplicaConns (run . runDBTNoTransaction task)
-
-
-instance ExecutionMode 'ReadWrite 'ReadOnly where
+instance ExecutionMode modeConn 'ReadOnly where
     runSerializable ClusterConnPool{readReplicaConns} task =
         control $ \run ->
             withResource readReplicaConns (runReadOnly run task)
@@ -152,7 +149,7 @@ readonly = CDBT
 -- | Mark any query as a 'ReadWrite'.  This is useful for including 'ReadOnly'
 -- code in a 'ReadWrite' value
 asReadWrite :: CDBT mode m a -> CDBT 'ReadWrite m a
-asReadWrite = CDBT . getDBT
+asReadWrite = coerce
 
 
 -- | Lift an arbitrary query
