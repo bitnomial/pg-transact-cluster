@@ -2,6 +2,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- For compatibility with resource-pool version 0.2.*
 {-# OPTIONS_GHC -Wno-deprecations #-}
 
@@ -74,22 +75,92 @@ asReadOnlyPool :: ClusterConnPool 'ReadWrite -> ClusterConnPool 'ReadOnly
 asReadOnlyPool = coerce
 
 
+-- | Effectively a wrapper around 'defaultPoolConfig' which makes it easy to
+-- automatically create 'Connection's from multiple 'IO' actions.
+--
+-- When the 'Pool' goes to create a new 'Connection', it rotates through the
+-- passed-in input actions, using each one once to create a new 'Connection'.
+-- After using up all input actions, it starts over back at the beginning of
+-- the list.
+--
+-- Used like the following:
+--
+-- @
+--   connPool
+--     [ connectPostgreSQL "postgresql://my-user:my-pass@host1:5432/my-db"
+--     , connectPostgreSQL "postgresql://my-user:my-pass@host2:5432/my-db"
+--     , connectPostgreSQL "postgresql://my-user:my-pass@host3:5432/my-db"
+--     ]
+-- @
 connPool :: [IO Connection] -> IO (Pool Connection)
-connPool connectors = do
-    getConnector <- setup connectors
+connPool = connPoolGeneric close
+
+
+-- | A generic version of 'connPool'.
+--
+-- This is useful for testing in GHCi.
+connPoolGeneric ::
+    forall a.
+    -- | close action
+    (a -> IO ()) ->
+    [IO a] ->
+    IO (Pool a)
+connPoolGeneric closeConn conns = do
     maxResources <- (* 2) <$> getNumCapabilities
-    newPool $ defaultPoolConfig (join getConnector) close idleTime maxResources
+    stripedIOs <- stripeActions conns
+    newPool $ defaultPoolConfig stripedIOs closeConn idleTime maxResources
   where
     idleTime = 10
-    setup = \case
-        c : cs -> do
-            refConnectors <- newIORef connectors
-            pure
-                . atomicModifyIORef' refConnectors
-                $ \case
+
+
+-- | Stripe a set of 'IO' actions.
+--
+-- Takes a list of 'IO' actions, and returns a wrapped 'IO' action.  The inner 'IO'
+-- action will iterate through the passed-in actions, running the next one
+-- every time it is called.
+--
+-- >>> foo <- stripeActions [putStrLn "hello" *> pure 1, putStrLn "bye" *> pure 2, putStrLn "goat" *> pure 3] :: IO (IO Int)
+-- >>> foo
+-- hello
+-- 1
+-- >>> foo
+-- bye
+-- 2
+-- >>> foo
+-- goat
+-- 3
+-- >>> foo
+-- hello
+-- 1
+-- >>> foo
+-- bye
+-- 2
+--
+-- This is similar to a function like
+-- @'sequence' . 'cycle' :: ['IO' a] -> 'IO' [a]@, but instead of returning a
+-- list of values, it returns an 'IO' action that will always run the next
+-- action from the input list.
+stripeActions :: [IO a] -> IO (IO a)
+stripeActions [] = throwIO NoConnection
+stripeActions (ioConn : moreConns) = do
+    -- This IORef keeps track of how many of the input items we've gone through
+    -- so far.
+    refConnectors <- newIORef (ioConn : moreConns)
+    pure $
+        -- This is the heart of this function. It first modifies the IORef:
+        --
+        -- 1. If there are still values remaining in the IORef, return the first
+        --    value from the IORef, and set the IORef to the remaining values.
+        -- 2. If there are no more remaining values in the IORef, return the
+        --    first value passed in to stripeActions.  Set the IORef to the
+        --    remaining values.
+        --
+        -- The join function runs the IO action returned from atomicModifyIORef'.
+        join $
+            atomicModifyIORef' refConnectors $
+                \case
                     x : xs -> (xs, x)
-                    _ -> (cs, c)
-        _ -> pure $ throwIO NoConnection
+                    [] -> (moreConns, ioConn)
 
 
 data ClusterConnPoolException = NoConnection
