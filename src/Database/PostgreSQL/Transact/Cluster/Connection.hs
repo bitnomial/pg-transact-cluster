@@ -19,9 +19,6 @@ module Database.PostgreSQL.Transact.Cluster.Connection (
     newClusterConnPool,
     newReadOnlyClusterConnPool,
     asReadOnlyPool,
-    connPool,
-    connPoolGeneric,
-    stripeActions,
     ClusterConnPoolException (..),
 ) where
 
